@@ -1,0 +1,23 @@
+const { chromium } = require('playwright');
+const SP = process.env.SP;
+(async () => {
+  const b = await chromium.launch();
+  const p = await b.newPage({ viewport: { width: Number(process.env.W||1180), height: Number(process.env.H||820) } });
+  const errs = [];
+  p.on('pageerror', e => errs.push('pageerror: ' + e.message + e.stack));
+  p.on('console', m => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
+  await p.route(/open-meteo|themealdb|gstatic/, r => r.abort());
+  await p.addInitScript(() => { window.__noSW = true; });
+  await p.goto('http://localhost:8765/');
+  await p.waitForTimeout(500);
+  await p.evaluate(() => { const s = window.mp.state; s.setup.done = true; s.setup.children=[{age:6}]; s.setup.allergies=['peanut']; s.setup.postcode='3000'; s.setup.meals.lunch=true; localStorage.setItem('mealplanner.v1', JSON.stringify(s)); });
+  await p.goto('http://localhost:8765/#/plan?week=2026-10-19'); await p.reload();
+  await p.waitForTimeout(800);
+  await p.click('[data-generate]');
+  await p.waitForTimeout(4500);
+  await p.screenshot({ path: SP + '/plan.png', fullPage: true });
+  const info = await p.evaluate(() => { const w = Object.values(window.mp.state.weeks)[0]; return w.days.map(d => d.mode + ': ' + Object.entries(d.meals).map(([s,m]) => s+'='+m.recipeId+'('+m.kind+(m.extraServings?'+'+m.extraServings:'')+(m.makes&&m.makes.length?' makes '+m.makes.map(x=>x.key):'')+')').join(', ')); });
+  console.log(info.join('\n'));
+  console.log(errs.join('\n'));
+  await b.close();
+})();
